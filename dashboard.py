@@ -674,3 +674,77 @@ with st.expander("🔍 Detaylı Etkileşimli Raporu Görüntüle"):
 # --- HAM VERİ ---
 with st.expander("Ham Veri (JSON)"):
     st.json(run_data.to_dict())
+
+# --------------------------------------------------------------------------
+# YENİ ÖZELLİK: SENTIMENT vs FİYAT GRAFİĞİ
+# --------------------------------------------------------------------------
+
+st.markdown("---")
+st.header("🧠 Piyasa Psikolojisi: Sentiment vs Fiyat")
+
+sentiment_path = "data/dashboard_sentiment.csv"
+
+if os.path.exists(sentiment_path):
+    try:
+        sent_df = pd.read_csv(sentiment_path)
+        # Tarihi datetime yap
+        sent_df['Date'] = pd.to_datetime(sent_df['Date'])
+        
+        # 3 Aylık veri varsayılan olsun
+        lookback = st.slider("Geriye Dönük Gün Sayısı:", min_value=30, max_value=1800, value=365)
+        
+        chart_df = sent_df.tail(lookback)
+        
+        # Dual Axis Chart
+        fig_sent = go.Figure()
+
+        # 1. Eksen: Fiyat (Çizgi)
+        fig_sent.add_trace(go.Scatter(
+            x=chart_df['Date'],
+            y=chart_df['Close'],
+            name="Bitcoin Fiyatı ($)",
+            line=dict(color='white', width=2)
+        ))
+
+        # 2. Eksen: Sentiment (Bar)
+        # Renkleri belirle: <20 Kırmızı (Korku), >80 Yeşil (Açgözlülük), Arası Gri
+        colors = ['#FF4136' if v <= 20 else '#2ECC40' if v >= 80 else '#808080' for v in chart_df['FNG_Value']]
+        
+        fig_sent.add_trace(go.Bar(
+            x=chart_df['Date'],
+            y=chart_df['FNG_Value'],
+            name="Fear & Greed Index",
+            yaxis="y2",
+            marker_color=colors,
+            opacity=0.3
+        ))
+
+        # Layout Ayarları
+        fig_sent.update_layout(
+            title="Fiyat Hareketleri ve Yatırımcı Duygusu",
+            xaxis_title="Tarih",
+            yaxis=dict(title="Fiyat ($)"),
+            yaxis2=dict(
+                title="Fear & Greed (0-100)",
+                overlaying="y",
+                side="right",
+                range=[0, 100]
+            ),
+            legend=dict(x=0, y=1.2, orientation="h"),
+            height=500
+        )
+        
+        st.plotly_chart(fig_sent, use_container_width=True)
+        
+        st.info("""
+        **💡 Nasıl Okunmalı?**
+        - **Kırmızı Barlar (<20):** Aşırı Korku. Genellikle piyasanın dip yaptığı ve **ALIM FIRSATI** verdiği yerlerdir.
+        - **Yeşil Barlar (>80):** Aşırı Açgözlülük. Genellikle piyasanın tepe yaptığı ve **SATIŞ/DÜZELTME** gelebileceği yerlerdir.
+        - **Gri:** Nötr bölge.
+        """)
+        
+    except Exception as e:
+        st.error(f"Sentiment grafiği oluşturulurken hata: {e}")
+
+else:
+    st.warning("Sentiment verisi bulunamadı. Lütfen `python data/prepare_dashboard_data.py` komutunu çalıştırın.")
