@@ -1,0 +1,12 @@
+pandas
+numpy
+yfinance
+ccxt
+pandas-ta
+backtesting
+scikit-learn
+matplotlib
+seaborn
+tensorflow
+streamlit
+plotly
