@@ -1,0 +1,51 @@
+{
+    "model": "XGBoost V1",
+    "description": "Farkl\u0131 piyasa d\u00f6ng\u00fclerinde (Bull, Bear, Recovery) sa\u011flaml\u0131k testi.",
+    "timestamp": "20251221_1619",
+    "results": [
+        {
+            "period": "2021_Bull_Run",
+            "start_date": "2020-10-01",
+            "end_date": "2021-11-10",
+            "return": 192.48377518457045,
+            "buy_hold": 512.0393929955521,
+            "max_drawdown": -56.688125080467366,
+            "trades": 175,
+            "win_rate": 62.28571428571429,
+            "sharpe": 1.1164296425028306
+        },
+        {
+            "period": "2022_Bear_Market",
+            "start_date": "2021-11-11",
+            "end_date": "2022-12-31",
+            "return": 7159.64009709268,
+            "buy_hold": -74.52270046832929,
+            "max_drawdown": -0.580676298277516,
+            "trades": 202,
+            "win_rate": 95.04950495049505,
+            "sharpe": 2.4353921784465244
+        },
+        {
+            "period": "2023_Recovery",
+            "start_date": "2023-01-01",
+            "end_date": "2023-12-31",
+            "return": 1173.5781133763676,
+            "buy_hold": 154.22546719406074,
+            "max_drawdown": -0.27843948305481536,
+            "trades": 179,
+            "win_rate": 89.94413407821229,
+            "sharpe": 3.2061049690380936
+        },
+        {
+            "period": "2024_Recent",
+            "start_date": "2024-01-01",
+            "end_date": "2025-12-21",
+            "return": 4535.601364937109,
+            "buy_hold": 99.81202523747358,
+            "max_drawdown": -22.025773149572302,
+            "trades": 328,
+            "win_rate": 75.60975609756098,
+            "sharpe": 2.6427302194912947
+        }
+    ]
+}

@@ -1,0 +1,17 @@
+{
+    "strategy": "SmaCross",
+    "symbol": "BTC-USD",
+    "date": "20251221_1309",
+    "metrics": {
+        "return": 63.618333040624954,
+        "buy_hold_return": 92.44138749388216,
+        "win_rate": 33.33333333333333,
+        "max_drawdown": -32.79163362942631,
+        "sharpe": 0.636970993517891,
+        "trades": 18,
+        "final_equity": 1636183.3304062495
+    },
+    "files": {
+        "html": "SmaCross_20251221_1309.html"
+    }
+}

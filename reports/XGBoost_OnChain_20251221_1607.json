@@ -1,0 +1,1 @@
+{"strategy": "OnChain_XGBoost", "description": "On-Chain verileri (Hash Rate, Difficulty, Active Addresses) ile g\u00fc\u00e7lendirilmi\u015f XGBoost modeli.", "return": -0.49032034687494164, "buy_hold_return": 7.298853884861292, "trades": 88, "win_rate": 51.13636363636363, "date": "20251221_1607"}

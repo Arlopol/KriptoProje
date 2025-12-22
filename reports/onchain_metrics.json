@@ -1,0 +1,1 @@
+{"model": "XGBoost_OnChain", "accuracy": 0.50920245398773, "features": ["RSI", "MACD", "SMA_50", "SMA_200", "Hash_Rate_ROC_1", "Hash_Rate_ROC_7", "Difficulty_ROC_1", "Difficulty_ROC_7", "Transaction_Count_ROC_1", "Transaction_Count_ROC_7", "Unique_Addresses_ROC_1", "Unique_Addresses_ROC_7", "Miners_Revenue_ROC_1", "Miners_Revenue_ROC_7"], "date": "2025-12-21"}

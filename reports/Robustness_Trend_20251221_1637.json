@@ -1,0 +1,51 @@
+{
+    "model": "XGBoost V1 (+Trend Filter)",
+    "description": "Bo\u011fa piyasas\u0131nda (Fiyat > SMA200) Short a\u00e7may\u0131 yasaklayan filtreli test.",
+    "timestamp": "20251221_1637",
+    "results": [
+        {
+            "period": "2021_Bull_Run",
+            "start_date": "2020-10-01",
+            "end_date": "2021-11-10",
+            "return": 254.40467160234385,
+            "buy_hold": 512.0393929955521,
+            "max_drawdown": -24.873136016294882,
+            "trades": 124,
+            "win_rate": 63.70967741935484,
+            "sharpe": 1.382805384013316
+        },
+        {
+            "period": "2022_Bear_Market",
+            "start_date": "2021-11-11",
+            "end_date": "2022-12-31",
+            "return": 5247.225054493456,
+            "buy_hold": -74.52270046832929,
+            "max_drawdown": -3.7868530575635884,
+            "trades": 195,
+            "win_rate": 94.35897435897435,
+            "sharpe": 2.4625489099325386
+        },
+        {
+            "period": "2023_Recovery",
+            "start_date": "2023-01-01",
+            "end_date": "2023-12-31",
+            "return": 590.1265197890624,
+            "buy_hold": 154.22546719406074,
+            "max_drawdown": -0.33511017414551425,
+            "trades": 129,
+            "win_rate": 91.47286821705426,
+            "sharpe": 3.4043098348789407
+        },
+        {
+            "period": "2024_Recent",
+            "start_date": "2024-01-01",
+            "end_date": "2025-12-21",
+            "return": 2431.23668409531,
+            "buy_hold": 99.02264444070433,
+            "max_drawdown": -12.287214576651163,
+            "trades": 199,
+            "win_rate": 83.91959798994975,
+            "sharpe": 2.712705919227529
+        }
+    ]
+}

@@ -40,7 +40,7 @@ data/*.parquet
 # Project Specific
 .gemini/
 Legacy_Backup/
-reports/
-*.html
-*.png
-debug_dashboard_loading.py
+# reports/
+# *.html
+# *.png
+# debug_dashboard_loading.py
