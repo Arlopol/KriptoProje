@@ -23,6 +23,7 @@ class MLStrategyTrend(Strategy):
         self.sma200 = self.I(lambda x: x, self.data.SMA_200)
 
     def next(self):
+        # print("DEBUG: MLStrategyTrend.next called")
         # 1. Pozisyon Yönetimi (Standart)
         if self.position:
             pl_pct = self.position.pl_pct
@@ -48,7 +49,7 @@ class MLStrategyTrend(Strategy):
             if self.position.is_short:
                 self.position.close()
             if not self.position.is_long:
-                self.buy()
+                self.buy(size=0.95)
                 
         # --- SHORT GİRİŞ ---
         # Model %60+ SAT diyor (prob_up < 0.40)
@@ -64,7 +65,7 @@ class MLStrategyTrend(Strategy):
                 if self.position.is_long:
                     self.position.close()
                 if not self.position.is_short:
-                    self.sell()
+                    self.sell(size=0.95)
                     
         # --- NÖTR ---
         else:

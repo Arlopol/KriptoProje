@@ -4,6 +4,8 @@ import json
 import os
 import glob
 import streamlit.components.v1 as components
+from datetime import datetime, timedelta
+import plotly.graph_objects as go
 
 # Sayfa Ayarları
 st.set_page_config(
@@ -83,11 +85,233 @@ df['is_monte_carlo'] = df.apply(lambda x: pd.notna(x.get('simulation_results.mea
 st.sidebar.header("📂 Rapor Gezgini")
 
 # 1. Kategori Seçimi
-category = st.sidebar.radio("Kategori:", ["📈 Model Sonuçları", "🛡️ Sağlamlık Testleri", "🎲 Simülasyon Testleri"])
+category = st.sidebar.radio("Kategori:", ["📈 Model Sonuçları", "🛡️ Sağlamlık Testleri", "🎲 Simülasyon Testleri", "🧪 Laboratuvar (Canlı Test)", "🌪️ Kaos Testi (Sentetik Veri)"])
 
 selected_filename = None
 
-if category == "🎲 Simülasyon Testleri":
+if category == "🧪 Laboratuvar (Canlı Test)":
+    st.header("🧪 Laboratuvar: Geçmişi Yeniden Yaşa")
+    st.info("Bu modda, yapay zekayı belirli bir tarih aralığında çalıştırıp **'Neden?'** sorusuna cevap arayabilirsiniz.")
+    
+    # Girdiler
+    c1, c2 = st.columns(2)
+    with c1:
+        # Varsayılan: Son 1 yıl
+        default_start = datetime.now() - timedelta(days=365)
+        start_date = st.date_input("Başlangıç Tarihi", value=default_start)
+    with c2:
+        end_date = st.date_input("Bitiş Tarihi", value=datetime.now())
+        
+    initial_capital = st.number_input("Başlangıç Sermayesi ($)", value=10000, step=1000)
+    
+    if st.button("🚀 Senaryoyu Çalıştır", type="primary"):
+        with st.spinner("Yapay Zeka Düşünüyor..."):
+            from backtest.run_scenario import run_scenario
+            results = run_scenario(str(start_date), str(end_date), initial_capital)
+            
+            if "error" in results:
+                st.error(results["error"])
+            else:
+                # Sonuçları Göster
+                st.subheader("📊 Test Sonuçları")
+                m1, m2, m3, m4, m5 = st.columns(5)
+                m1.metric("Son Sermaye", f"${results['final_equity']:,.0f}", f"%{results['return_pct']:.2f}")
+                m2.metric("İşlem Sayısı", results['total_trades'])
+                m3.metric("Max Drawdown", f"%{results['max_drawdown']:.2f}")
+                m4.metric("Kazanma Oranı", f"%{results['win_rate']:.1f}")
+                
+                # Model Performansı (Genel Accuracy)
+                metrics = results.get('metrics', {})
+                train_metrics = results.get('train_metrics', {})
+                acc_val = metrics.get('accuracy', 0) * 100
+                train_acc = train_metrics.get('accuracy', 0) * 100
+                m5.metric("Model Doğruluğu", f"%{acc_val:.1f}", f"Eğitim: %{train_acc:.1f}", delta_color="normal")
+                
+                # --- DETAYLI METRİKLER ---
+                with st.expander("📈 Detaylı Model Performansı (Accuracy, Precision, Recall)", expanded=False):
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("Doğruluk (Accuracy)", f"%{metrics.get('accuracy',0)*100:.1f}", help="Doğru tahmin oranı")
+                    c2.metric("Keskinlik (Precision)", f"%{metrics.get('precision',0)*100:.1f}", help="Al dediğinde ne kadar haklıydı?")
+                    c3.metric("Duyarlılık (Recall)", f"%{metrics.get('recall',0)*100:.1f}", help="Yükselişlerin ne kadarını yakaladı?")
+                    c4.metric("F1 Skoru", f"%{metrics.get('f1',0)*100:.1f}", help="Denge puanı")
+                
+                # --- İNTERAKTİF GRAFİK (Log Visualization) ---
+                st.markdown("---")
+                st.subheader("🧠 Yapay Zeka Günlüğü (Görsel Analiz)")
+                st.info("Grafik üzerindeki noktalara gelerek yapay zekanın **neden** o kararı verdiğini okuyabilirsiniz.")
+                
+                logs = results.get('logs', [])
+                if logs:
+                    df_logs = pd.DataFrame(logs)
+                    df_logs['Date'] = pd.to_datetime(df_logs['Date'])
+                    
+                    fig_log = go.Figure()
+                    
+                    # 1. Fiyat Çizgisi
+                    fig_log.add_trace(go.Scatter(
+                        x=df_logs['Date'], 
+                        y=df_logs['Price'],
+                        mode='lines',
+                        name='Fiyat',
+                        line=dict(color='#1f77b4', width=2)
+                    ))
+                    
+                    # 2. İşlem Noktaları (Renkli Markerlar)
+                    # Alım, Satım ve Bekle için ayrı renkler ve hover textler
+                    
+                    # Renk Haritası
+                    color_map = {
+                        "ALIM": "green",
+                        "SATIŞ": "red",
+                        "PAS GEÇ": "orange",
+                        "BEKLE": "gray",
+                        "POZİSYONU KORU": "blue",
+                        "TERS İŞLEM": "purple",
+                        "POZİSYON KAPAT": "black"
+                    }
+                    
+                    # Hover Template
+                    df_logs['Color'] = df_logs['Action'].apply(lambda x: next((v for k, v in color_map.items() if k in x), "gray"))
+                    
+                    # Marker Boyutu (Önemli aksiyonlar büyük)
+                    df_logs['Size'] = df_logs['Action'].apply(lambda x: 12 if "ALIM" in x or "SATIŞ" in x or "KAPAT" in x else 6)
+                    
+                    fig_log.add_trace(go.Scatter(
+                        x=df_logs['Date'],
+                        y=df_logs['Price'],
+                        mode='markers',
+                        name='Kararlar',
+                        marker=dict(
+                            color=df_logs['Color'],
+                            size=df_logs['Size'],
+                            line=dict(width=1, color='DarkSlateGrey')
+                        ),
+                        text=df_logs['Action'], # Hover başlığı
+                        customdata=df_logs['Reason'], # Hover detay
+                        hovertemplate="<b>%{text}</b><br>Fiyat: $%{y:,.0f}<br>💭 <i>%{customdata}</i><extra></extra>"
+                    ))
+                    
+                    fig_log.update_layout(
+                        title="Yapay Zeka Karar Haritası",
+                        xaxis_title="Tarih",
+                        yaxis_title="Fiyat ($)",
+                        height=600,
+                        hovermode="x unified"
+                    )
+                    
+                    st.plotly_chart(fig_log, use_container_width=True)
+                    
+                    # Tablo Gösterimi (İsteğe Bağlı)
+                    with st.expander("📜 Detaylı Log Listesi (Tablo)"):
+                        st.dataframe(df_logs[['Date', 'Action', 'Price', 'Trend', 'Reason']])
+
+    # Laboratuvar modu seçiliyse aşağısındaki standart raporu gösterme
+    st.stop()
+
+elif category == "🌪️ Kaos Testi (Sentetik Veri)":
+    st.header("🌪️ Kaos Testi: Beklenmedik Senaryolar")
+    st.info("Bu modda, yapay zekayı hiç yaşanmamış, **rastgele (sentetik)** piyasa koşullarında test edebilirsiniz. Amaç, modelin aşırı volatilite veya ani trend değşimlerine karşı dayanıklılığını ölçmektir.")
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("⚙️ Piyasa Parametreleri")
+        duration = st.slider("Simülasyon Süresi (Gün)", 250, 730, 365, help="Modelin SMA 200 hesaplayabilmesi için en az 250 gün gereklidir.")
+        volatility = st.slider("Volatilite (Günlük Risk)", 0.01, 0.10, 0.03, 0.01, help="0.02 = %2 Günlük Değişim (Normal), 0.08 = Kriz")
+    
+    with c2:
+        st.subheader("📈 Trend Eğilimi")
+        drift = st.slider("Piyasa Eğilimi (Drift)", -0.005, 0.005, 0.0002, 0.0001, format="%.4f", help="Pozitif = Boğa, Negatif = Ayı")
+        initial_capital = st.number_input("Başlangıç Sermayesi ($)", value=10000, step=1000, key="chaos_cap")
+
+    if st.button("🌪️ Kaos Yarat ve Test Et", type="primary"):
+        with st.spinner("Yapay Piyasa Oluşturuluyor ve Model Sınanıyor..."):
+            try:
+                from backtest.run_synthetic_test import run_synthetic_test
+                results = run_synthetic_test(duration_days=duration, volatility=volatility, drift=drift, initial_capital=initial_capital)
+                
+                if "error" in results:
+                    st.error(results["error"])
+                else:
+                    # Sonuçları Göster
+                    st.subheader("📊 Kaos Testi Sonuçları")
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Son Sermaye", f"${results['final_equity']:,.0f}", f"%{results['return_pct']:.2f}")
+                    m2.metric("İşlem Sayısı", results['total_trades'])
+                    m3.metric("Max Drawdown", f"%{results['max_drawdown']:.2f}")
+                    m4.metric("Kazanma Oranı", f"%{results['win_rate']:.1f}")
+
+                    # --- İNTERAKTİF GRAFİK (Log Visualization) ---
+                    st.markdown("---")
+                    st.subheader("🧠 Yapay Zeka Günlüğü (Sentetik)")
+                    
+                    logs = results.get('logs', [])
+                    if logs:
+                        df_logs = pd.DataFrame(logs)
+                        # Sentetik veride tarih 2025'ten başlıyor
+                        df_logs['Date'] = pd.to_datetime(df_logs['Date'])
+                        
+                        fig_log = go.Figure()
+                        
+                        # 1. Fiyat Çizgisi
+                        fig_log.add_trace(go.Scatter(
+                            x=df_logs['Date'], 
+                            y=df_logs['Price'],
+                            mode='lines',
+                            name='Sentetik Bitcoin Fiyatı',
+                            line=dict(color='#8A2BE2', width=2) # Mor renk
+                        ))
+                        
+                        # Renk Haritası
+                        color_map = {
+                            "ALIM": "green",
+                            "SATIŞ": "red",
+                            "PAS GEÇ": "orange",
+                            "BEKLE": "gray",
+                            "POZİSYONU KORU": "blue",
+                            "TERS İŞLEM": "purple",
+                            "POZİSYON KAPAT": "black"
+                        }
+                        
+                        df_logs['Color'] = df_logs['Action'].apply(lambda x: next((v for k, v in color_map.items() if k in x), "gray"))
+                        df_logs['Size'] = df_logs['Action'].apply(lambda x: 12 if "ALIM" in x or "SATIŞ" in x or "KAPAT" in x else 6)
+                        
+                        fig_log.add_trace(go.Scatter(
+                            x=df_logs['Date'],
+                            y=df_logs['Price'],
+                            mode='markers',
+                            name='Kararlar',
+                            marker=dict(
+                                color=df_logs['Color'],
+                                size=df_logs['Size'],
+                                line=dict(width=1, color='DarkSlateGrey')
+                            ),
+                            text=df_logs['Action'],
+                            customdata=df_logs['Reason'],
+                            hovertemplate="<b>%{text}</b><br>Fiyat: $%{y:,.0f}<br>💭 <i>%{customdata}</i><extra></extra>"
+                        ))
+                        
+                        fig_log.update_layout(
+                            title="Sentetik Piyasada Yapay Zeka Kararları",
+                            xaxis_title="Simülasyon Tarihi",
+                            yaxis_title="Fiyat ($)",
+                            height=600,
+                            hovermode="x unified"
+                        )
+                        
+                        st.plotly_chart(fig_log, use_container_width=True)
+                        
+                        with st.expander("📜 Detaylı Log Listesi"):
+                            st.dataframe(df_logs[['Date', 'Action', 'Price', 'Trend', 'Reason']])
+
+            except Exception as e:
+                st.error(f"Test sırasında kritik hata: {str(e)}")
+                # Detaylı hata için
+                import traceback
+                st.code(traceback.format_exc())
+
+    st.stop()
+
+elif category == "🎲 Simülasyon Testleri":
     df_display = df[df['is_monte_carlo'] == True].sort_values(by='date', ascending=False)
     if df_display.empty:
         st.sidebar.warning("Henüz simülasyon testi raporu yok.")
