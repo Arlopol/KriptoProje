@@ -222,12 +222,14 @@ elif category == "🌪️ Kaos Testi (Sentetik Veri)":
         st.subheader("📈 Trend Eğilimi")
         drift = st.slider("Piyasa Eğilimi (Drift)", -0.005, 0.005, 0.0002, 0.0001, format="%.4f", help="Pozitif = Boğa, Negatif = Ayı")
         initial_capital = st.number_input("Başlangıç Sermayesi ($)", value=10000, step=1000, key="chaos_cap")
+        
+    use_realistic = st.checkbox("🧠 Akıllı Kaos (Rejim Değişimi & Şoklar)", value=True, help="Aktif edilirse, piyasa sürekli aynı kalmaz; Boğa, Ayı ve Yatay döngüler arasında geçiş yapar. Ani çöküşler yaşanabilir.")
 
     if st.button("🌪️ Kaos Yarat ve Test Et", type="primary"):
         with st.spinner("Yapay Piyasa Oluşturuluyor ve Model Sınanıyor..."):
             try:
                 from backtest.run_synthetic_test import run_synthetic_test
-                results = run_synthetic_test(duration_days=duration, volatility=volatility, drift=drift, initial_capital=initial_capital)
+                results = run_synthetic_test(duration_days=duration, volatility=volatility, drift=drift, initial_capital=initial_capital, use_regime_switching=use_realistic)
                 
                 if "error" in results:
                     st.error(results["error"])
@@ -312,6 +314,93 @@ elif category == "🌪️ Kaos Testi (Sentetik Veri)":
     st.stop()
 
 elif category == "🎲 Simülasyon Testleri":
+    st.header("🎲 Monte Carlo Simülasyonu")
+    
+    # İki Alt Mod: Yeni Simülasyon veya Rapor Görüntüle
+    mc_mode = st.radio("Seçiminiz:", ["🔍 Geçmiş Raporları İncele", "⚡ Yeni Simülasyon Başlat"], horizontal=True)
+    
+    if mc_mode == "⚡ Yeni Simülasyon Başlat":
+        st.info("**Monte Carlo Mantığı:** Geçmişteki gerçek işlemlerinizin sırası rastgele değiştirilerek (Reshuffling) 1000'lerce 'Alternatif Senaryo' üretilir. Amaç, şans faktörünü ölçmek ve 'En kötü durumda ne olurdu?' sorusuna yanıt bulmaktır.\n\n*Not: Bu test sentetik fiyat üretmez, gerçek işlemlerinizi kullanır.*")
+        
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            strat_choice = st.selectbox("Strateji Seçimi", ["Professional", "Adventurous"])
+            mc_capital = st.number_input("Başlangıç Sermayesi ($)", value=10000, step=1000, key="mc_cap")
+        with cc2:
+            sim_count = st.slider("Simülasyon Sayısı (Adet)", 100, 5000, 1000, step=100)
+            horizon_count = st.slider("İşlem Derinliği (Adet)", 50, 500, 150, help="Her simülasyonda kaç adet işlem yapılacak?")
+            
+        if st.button("🎲 Zarları At (Simülasyonu Başlat)", type="primary"):
+            with st.spinner("Binlerce paralel evren simüle ediliyor..."):
+                try:
+                    from backtest.run_monte_carlo import run_simulation_for_dashboard
+                    res_mc = run_simulation_for_dashboard(strategy_name=strat_choice, initial_capital=mc_capital, simulations=sim_count, horizon=horizon_count)
+                    
+                    if "error" in res_mc:
+                        st.error(res_mc["error"])
+                    else:
+                        st.success("✅ Simülasyon Tamamlandı!")
+                        # Sonuçları ekrana basmak yerine reports listesine yönlendirmek daha kolay olabilir
+                        # Ama kullanıcı anlık görmek ister.
+                        # Buradaki variable ismini 'run_data' yaparsak aşağıdaki kod otomatik gösterir mi?
+                        # run_data aşağıda tanımlanıyor. Biz burada direkt run_data'yı set edelim.
+                        run_data = pd.Series(res_mc) # Dict to Series
+                        selected_filename = "CANLI_TEST" # Dummy
+                        
+                        # Aşağıdaki kod bloğu 'run_data' üzerinden çalıştığı için
+                        # Buradan sonrasını manipüle edebiliriz.
+                        # Ancak kodun akışı 'elif' bloklarından çıkıp aşağıya gidiyor.
+                        # O yüzden burada 'run_data'yı global scope'a çıkarmamız lazım veya
+                        # aşağıya 'goto' yapamadığımız için kodu kopyalamak veya yapılandırmak lazım.
+                        
+                        # ÇÖZÜM: Sonuçları session state'e atıp rerun() diyebiliriz ya da
+                        # Direkt kodun geri kalanını kullanmak için selected_filename'i set edip
+                        # df'ye bu yeni raporu ekleyebiliriz (Karmaşık).
+                        
+                        # En temizi: Sonuçları burada gösterelim ve st.stop() diyelim.
+                        
+                        # --- SONUÇ GÖSTERİMİ (Copy-Paste from below with modifications) ---
+                        st.divider()
+                        st.subheader(f"📊 Sonuçlar: {res_mc['model']}")
+                        
+                        sim_res = res_mc['simulation_results']
+                        sim_meta = res_mc['simulation_meta']
+                        
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("Ortalama Sermaye", f"${sim_res['mean_equity']:,.0f}", f"ROI: %{sim_meta['mean_roi_pct']}")
+                        c2.metric("Kötü Senaryo (%5)", f"${sim_res['p05_equity']:,.0f}", delta="Risk", delta_color="inverse")
+                        c3.metric("Batış Riski", f"%{sim_res['risk_of_ruin_50pct']:.2f}")
+                        c4.metric("Tahmini Süre", f"{sim_meta['simulated_duration_years']} Yıl")
+                        
+                        # --- ML METRİKLERİ ---
+                        st.divider()
+                        st.subheader("🤖 Model Performansı (Tüm Dönem)")
+                        mm = res_mc.get('model_metrics', {})
+                        if mm:
+                            m1, m2, m3, m4 = st.columns(4)
+                            m1.metric("Doğruluk (Acc)", f"%{mm.get('accuracy', 0)*100:.1f}")
+                            m2.metric("Keskinlik (Prec)", f"%{mm.get('precision', 0)*100:.1f}")
+                            m3.metric("Duyarlılık (Rec)", f"%{mm.get('recall', 0)*100:.1f}")
+                            m4.metric("F1 Skoru", f"%{mm.get('f1', 0)*100:.1f}")
+                        
+                        # Histogram
+                        dist_data = res_mc['data_samples']['final_equities']
+                        import plotly.express as px
+                        fig = px.histogram(x=dist_data, nbins=50, title="Olası Sonuç Dağılımı", color_discrete_sequence=['#00CC96'])
+                        fig.add_vline(x=mc_capital, line_dash="dash", line_color="white", annotation_text="Başlangıç")
+                        fig.add_vline(x=sim_res['p05_equity'], line_dash="dot", line_color="red", annotation_text="Kötü Senaryo")
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        st.success(f"Detaylı rapor kaydedildi: {res_mc['json_filename']}")
+
+                except Exception as e:
+                    st.error(f"Hata: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
+        
+        st.stop()
+        
+    # MEVCUT RAPORLARI GÖSTERME (Eski Kodun Devamı)
     df_display = df[df['is_monte_carlo'] == True].sort_values(by='date', ascending=False)
     if df_display.empty:
         st.sidebar.warning("Henüz simülasyon testi raporu yok.")
@@ -324,15 +413,322 @@ elif category == "🎲 Simülasyon Testleri":
         st.sidebar.caption(f"Dosya: {selected_filename}")
 
 elif category == "🛡️ Sağlamlık Testleri":
-    df_display = df[df['is_robustness'] == True]
-    if df_display.empty:
-        st.sidebar.warning("Henüz sağlamlık testi raporu yok.")
-    else:
-        selected_filename = st.sidebar.radio(
-            "Test Seçiniz:",
-            df_display['json_filename'].tolist(),
-            format_func=lambda x: f"{df_display[df_display['json_filename']==x]['date'].values[0]} | {df_display[df_display['json_filename']==x]['strategy'].values[0]}"
-        )
+    st.header("🛡️ Sağlamlık (Robustness) Testleri")
+    
+    # Alt Mod Seçimi: Yeni Test vs Raporlar
+    # Eğer henüz hiç rapor yoksa direkt yeni teste yönlendir
+    rb_mode = st.radio("Seçiminiz:", ["🔍 Geçmiş Raporları İncele", "⚡ Yeni Test Başlat"], horizontal=True, index=1)
+    
+    if rb_mode == "⚡ Yeni Test Başlat":
+        test_type = st.radio("Test Türü:", ["🧪 Optimizasyon (Grid Search)", "🔴 Yürüyen Analiz (Walk-Forward)"], horizontal=True)
+        
+        if test_type == "🧪 Optimizasyon (Grid Search)":
+            st.info("Bu mod, en iyi parametreleri bulmak için çoklu testler yapar.")
+            
+            use_ultra = st.toggle("🔥 ULTRA MOD (Tüm Kombinasyonları Dene)", value=False)
+            
+            if use_ultra:
+                st.warning("⚠️ Bu mod Sentiment ve On-Chain verilerinin OLAN ve OLMAYAN tüm hallerini dener. Süre uzayabilir!")
+                # Otomatik Grid
+                grid_buy = [0.60, 0.70]
+                grid_sl = [0.05, 0.10]
+                grid_tp = [0.15, 0.30]
+                # Veri Kaynakları da Grid'e dahil
+                grid_sent = [False, True]
+                grid_oc = [False, True]
+                # Trailing de test et
+                grid_trail_use = [False, True]
+                grid_trail_decay = [0.10]
+                
+                st.write("Ultra Mod Ayarları Otomatik Yüklendi ✅")
+            else:
+                # Session State Başlatma (İlk kez çalışıyorsa)
+                if 'grid_buy' not in st.session_state: st.session_state.grid_buy = [0.60, 0.75]
+                if 'grid_sl' not in st.session_state: st.session_state.grid_sl = [0.05, 0.10]
+                if 'grid_tp' not in st.session_state: st.session_state.grid_tp = [0.15, 0.30]
+
+                # Tümünü Seç Butonları
+                col_btn1, col_btn2 = st.columns(2)
+                if col_btn1.button("✅ Tüm Alım Eşiklerini Seç"):
+                    st.session_state.grid_buy = [0.55, 0.60, 0.65, 0.70, 0.75]
+                if col_btn2.button("✅ Tüm Risk Ayarlarını Seç"):
+                    st.session_state.grid_sl = [0.05, 0.10, 0.15]
+                    st.session_state.grid_tp = [0.15, 0.25, 0.30, 0.35, 0.50]
+
+                # Manuel Seçim
+                c1, c2 = st.columns(2)
+                grid_buy = c1.multiselect("Alım Eşiği (Buy Thresholds)", [0.55, 0.60, 0.65, 0.70, 0.75], key='grid_buy')
+                grid_sl = c2.multiselect("Stop Loss (Zarar Kes)", [0.05, 0.10, 0.15], key='grid_sl')
+                
+                c3, c4 = st.columns(2)
+                grid_tp = c3.multiselect("Take Profit (Kar Al)", [0.15, 0.25, 0.30, 0.35, 0.50], key='grid_tp')
+                
+                # Trailing için Grid
+                grid_trail_use = [False]
+                grid_trail_decay = [0.10]
+                if st.checkbox("İz Süren Stop (Trailing) Kombinasyonlarını da Dene?", value=False):
+                    grid_trail_use = [False, True]
+                    grid_trail_decay = c4.multiselect("Trailing Decay Ayarları", [0.05, 0.10, 0.15], [0.10])
+
+                grid_sent = [True] # Varsayılan: Hepsi açık olsun manuelde
+                grid_oc = [True]
+            
+            grid_sell = [0.40] # Sabit
+            
+            total_tests = len(grid_buy) * len(grid_sl) * len(grid_tp) * len(grid_sent) * len(grid_oc) * len(grid_trail_use)
+            st.write(f"Tahmini Test Sayısı: {total_tests}")
+            
+            if st.button("⚡ Optimizasyonu Başlat (Sabır Gerekir)", type="primary"):
+                from backtest.run_grid_search import run_grid_search
+                
+                param_grid = {
+                    'buy_threshold': grid_buy,
+                    'sell_threshold': grid_sell,
+                    'stop_loss_pct': grid_sl,
+                    'take_profit_pct': grid_tp,
+                    'use_sentiment': grid_sent,
+                    'use_onchain': grid_oc,
+                    'use_trailing_stop': grid_trail_use,
+                    'trailing_decay': grid_trail_decay
+                }
+                
+                status_test = st.empty()
+                prog_bar = st.progress(0)
+                
+                def update_progress(current, total, message):
+                    percent = int((current / total) * 100)
+                    prog_bar.progress(percent)
+                    status_test.text(f"⏳ {message}")
+                
+                try:
+                    # 365 gün train, 90 gün step (Hız için)
+                    df_results = run_grid_search(
+                        param_grid, 
+                        train_window=365, 
+                        test_window=90, 
+                        use_sentiment=True, 
+                        use_onchain=True,
+                        progress_callback=update_progress
+                    )
+                    
+                    status_test.text("✅ Optimizasyon Tamamlandı!")
+                    st.success("En İyi Sonuçlar:")
+                    st.dataframe(df_results.style.highlight_max(axis=0, subset=['Return_Pct', 'Sharpe']))
+                    
+                    if not df_results.empty:
+                        best = df_results.iloc[0]
+                        st.json({
+                            "ÖNERİLEN AYARLAR": {
+                                "Buy Threshold": best['Buy_Thresh'],
+                                "Stop Loss": best['Stop_Loss'],
+                                "Take Profit": best['Take_Profit'],
+                                "Beklenen Getiri": f"%{best['Return_Pct']:.2f}"
+                            }
+                        })
+                        
+                except Exception as e:
+                    st.error(f"Hata oluştu: {e}")
+
+        elif test_type == "🔴 Yürüyen Analiz (Walk-Forward)":
+            st.info("**Yürüyen Analiz (Walk-Forward):** Modelin adaptasyon yeteneğini ölçer. Geçmişten bugüne gelirken, her ay modeli **yeni verilerle yeniden eğitiriz (Re-training).** Böylece modelin 'ezberci' mi yoksa 'öğrenen' mi olduğunu anlarız.\n\n*Not: Mevcut 'Başarılı Modelinizi' bozmaz, geçici modeller eğitir.*")
+            
+            # Parametreler
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                wf_strat_type = st.selectbox("Strateji Tipi", ["Profesyonel (Filtreli)", "Maceracı (Filtresiz)"], index=0)
+            with c2:
+                wf_train_window = st.number_input("Eğitim Penceresi (Gün)", 90, 720, 365, help="Model her seferinde geçmiş kaç günü öğrensin?")
+            with c3:
+                wf_step = st.selectbox("Yeniden Eğitim Sıklığı", [30, 60, 90], index=0, format_func=lambda x: f"Her {x} Günde Bir")
+                
+            use_filt = True if wf_strat_type == "Profesyonel (Filtreli)" else False
+            use_sent = st.checkbox("🧠 Sentiment (Korku & Açgözlülük) Verisini Dahil Et", value=False, help="Model piyasa duygusunu da öğrensin mi?")
+            use_oc = st.checkbox("🔗 On-Chain (Zincir Üstü) Verisini Dahil Et", value=False, help="Model madenci geliri, işlem sayısı vb. ağ verilerini de öğrensin mi?")
+            
+            import datetime
+            wf_start_date = st.date_input("Analiz Başlangıç Tarihi", datetime.date(2023, 1, 1))
+                
+                
+            # Eşik Değer Ayarları (Advanced)
+            with st.expander("⚙️ Gelişmiş Ayarlar (Risk Toleransı)", expanded=False):
+                c1, c2 = st.columns(2)
+                wf_buy_thresh = c1.slider("Alım Eşiği (Buy Threshold)", 0.50, 0.90, 0.60, 0.05, help="Model ne kadar emin olunca alsın? Yüksek değer = Daha az ama öz işlem.")
+                wf_sell_thresh = c2.slider("Satış Eşiği (Sell Threshold)", 0.10, 0.50, 0.40, 0.05, help="Model ne kadar emin olunca satsın? Düşük değer = Daha kolay sat.")
+                
+                c3, c4 = st.columns(2)
+                wf_stop_loss = c3.slider("Stop Loss (Zarar Kes %)", 0.01, 0.20, 0.10, 0.01)
+                wf_take_profit = c4.slider("Take Profit (Kar Al %)", 0.05, 0.50, 0.20, 0.05)
+                
+                # Trailing Stop Seçeneği
+                st.markdown("---")
+                use_trail = st.checkbox("🏃‍♂️ İz Süren Stop (Trailing Stop) Kullan", value=False, help="Kar belli bir seviyeye gelince satmaz, zirveden dönüşü bekler.")
+                trail_decay = 0.10
+                if use_trail:
+                    trail_decay = st.slider("İz Süren Stop Eşiği (Trailing Decay)", 0.05, 0.30, 0.10, 0.01, help="Fiyat zirveden ne kadar düşünce satılsın?")
+
+            if st.button("🚀 Yürüyen Analizi Başlat (Uzun Sürebilir)", type="primary"):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                try:
+                    status_text.text("Analiz Hazırlanıyor...")
+                    # Wrapper fonksiyonu import et (veya dosyadaki yeni fonksiyonu kullan)
+                    from backtest.run_walk_forward import run_walk_forward_and_save
+                    
+                    with st.spinner("Model zaman yolculuğuna çıktı... Her adımda yeniden eğitiliyor..."):
+                        wf_res = run_walk_forward_and_save(
+                            train_window_days=wf_train_window,
+                            test_window_days=wf_step,
+                            start_date=str(wf_start_date),
+                            use_trend_filter=use_filt,
+                            use_sentiment=use_sent,
+                            use_onchain=use_oc,
+                            buy_threshold=wf_buy_thresh,
+                            sell_threshold=wf_sell_thresh,
+                            stop_loss_pct=wf_stop_loss,
+                            take_profit_pct=wf_take_profit,
+                            use_trailing_stop=use_trail,
+                            trailing_decay=trail_decay
+                        )
+                    
+                    if "error" in wf_res:
+                        st.error(wf_res["error"])
+                    else:
+                        progress_bar.progress(100)
+                        st.success("✅ Analiz Tamamlandı!")
+                        
+                        # Sonuç özet
+                        c1, c2, c3, c4, c5 = st.columns(5)
+                        
+                        bh_return = wf_res.get('bh_return', 0.0)
+                        strat_return = wf_res['return_pct']
+                        diff_return = strat_return - bh_return
+                        
+                        c1.metric("Final Sermaye", f"${wf_res['final_equity']:,.0f}", f"Net: %{strat_return:.1f}")
+                        c2.metric("Al-Tut Farkı", f"%{diff_return:.1f}", delta=f"{diff_return:.1f}%")
+                        c3.metric("Sharpe Oranı", f"{wf_res['sharpe_ratio']:.2f}")
+                        c4.metric("Max Drawdown", f"%{wf_res['max_drawdown']:.2f}")
+                        c5.metric("İşlem Sayısı", wf_res['total_trades'])
+                        
+                        # Grafik 1: Equity Curve
+                        st.divider()
+                        st.subheader("📈 Gerçekçi (Adapte Olan) Performans Eğrisi")
+                        
+                        eq_data = pd.DataFrame.from_dict(wf_res['equity_curve'], orient='index', columns=['Strateji'])
+                        if 'bh_equity_curve' in wf_res:
+                            bh_data = pd.DataFrame.from_dict(wf_res['bh_equity_curve'], orient='index', columns=['Buy & Hold'])
+                            eq_data = pd.concat([eq_data, bh_data], axis=1)
+                        
+                        st.line_chart(eq_data)
+                        
+                        # Grafik 1.5: İşlem Yerleri (Fiyat Grafiği)
+                        if 'price_data' in wf_res and 'logs' in wf_res:
+                            st.subheader("📍 İşlem Noktaları (Boncuklar)")
+                            price_series = pd.Series(wf_res['price_data'])
+                            price_df = pd.DataFrame({'Close': price_series})
+                            price_df.index = pd.to_datetime(price_df.index)
+                            price_df = price_df.sort_index()
+                            
+                            import plotly.graph_objects as go
+                            fig_trade = go.Figure()
+                            
+                            # Fiyat Çizgisi
+                            fig_trade.add_trace(go.Scatter(
+                                x=price_df.index, 
+                                y=price_df['Close'], 
+                                mode='lines', 
+                                name='BTC Fiyatı',
+                                line=dict(color='gray', width=1)
+                            ))
+                            
+                            # İşlemleri Parse Et
+                            buy_dates = []
+                            buy_prices = []
+                            buy_reasons = [] # HOVER TEXT İÇİN
+                            
+                            sell_dates = []
+                            sell_prices = []
+                            sell_reasons = [] # HOVER TEXT İÇİN
+                            
+                            for log in wf_res['logs']:
+                                # log format: {'Date': '...', 'Action': '...', 'Price': ...}
+                                # Action bazen "AL (Score: 0.65)" şeklinde olabilir, startswith kullanalım.
+                                act = log.get('Action', '').upper()
+                                date_str = log.get('Date')
+                                if not date_str: continue
+                                
+                                # Emoji olduğu için startswith çalışmayabilir, IN kullanalım
+                                if "ALIM" in act or "BUY" in act:
+                                    buy_dates.append(date_str)
+                                    buy_prices.append(log.get('Price'))
+                                    buy_reasons.append(log.get('Reason', 'Nedeni Bilinmiyor'))
+                                elif "SATIŞ" in act or "SELL" in act or "SHORT" in act:
+                                    sell_dates.append(date_str)
+                                    sell_prices.append(log.get('Price'))
+                                    sell_reasons.append(log.get('Reason', 'Nedeni Bilinmiyor'))
+                                    
+                            # Alım Boncukları (Yeşil Üçgen)
+                            fig_trade.add_trace(go.Scatter(
+                                x=buy_dates, 
+                                y=buy_prices, 
+                                mode='markers', 
+                                name='Alım',
+                                text=buy_reasons, # HOVER BURADA
+                                hoverinfo='text+y+x', # Sadece metin, tarih, fiyat göster
+                                marker=dict(symbol='triangle-up', size=12, color='#00CC96')
+                            ))
+                            
+                            # Satım Boncukları (Kırmızı Üçgen)
+                            fig_trade.add_trace(go.Scatter(
+                                x=sell_dates, 
+                                y=sell_prices, 
+                                mode='markers', 
+                                name='Satım',
+                                text=sell_reasons, # HOVER BURADA
+                                hoverinfo='text+y+x',
+                                marker=dict(symbol='triangle-down', size=12, color='#EF553B')
+                            ))
+                            
+                            fig_trade.update_layout(title="Alım-Satım Noktaları (Üzerine Gel)", hovermode="closest")
+                            st.plotly_chart(fig_trade, use_container_width=True)
+
+                        
+                        # Grafik 2: Model Kararlılığı
+                        st.subheader("🧠 Modelin Zaman İçindeki Zeka Değişimi")
+                        acc_hist = pd.DataFrame(wf_res['model_accuracy_history'])
+                        if not acc_hist.empty:
+                            acc_hist['period'] = pd.to_datetime(acc_hist['period'])
+                            acc_hist.set_index('period', inplace=True)
+                            st.bar_chart(acc_hist * 100)
+                            st.caption("Stabil veya artan çubuklar, modelin sağlıklı öğrendiğini gösterir.")
+                        else:
+                            st.warning("Yeterli doğruluk verisi toplanamadı.")
+
+                except Exception as e:
+                    st.error(f"Hata: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
+            st.stop()
+            
+        elif robust_type == "Gürültü Testi (Noise Test)":
+            st.write("Bu bölüm, modelin gürültülü veriye karşı ne kadar dayanıklı olduğunu test eder.")
+            noise_level = st.slider("Gürültü Seviyesi (%)", 0.0, 5.0, 1.0, 0.1)
+            if st.button("Gürültü Testini Başlat"):
+                 st.info("Bu özellik demo aşamasındadır.")
+            st.stop()
+
+    # Rapor Görüntüleme Modu
+    else: # rb_mode == "🔍 Geçmiş Raporları İncele"
+        df_display = df[df['is_robustness'] == True].sort_values(by='date', ascending=False)
+        if df_display.empty:
+            st.sidebar.warning("Henüz sağlamlık testi raporu yok.")
+        else:
+            selected_filename = st.sidebar.radio(
+                "Test Seçiniz:",
+                df_display['json_filename'].tolist(),
+                format_func=lambda x: f"{df_display[df_display['json_filename']==x]['date'].values[0]} | {df_display[df_display['json_filename']==x]['strategy'].values[0] if 'strategy' in df_display.columns else 'Robustness'}"
+            )
+            st.sidebar.caption(f"Dosya: {selected_filename}")
 
 else: # Model Sonuçları
     # Monte Carlo ve Robustness olmayanlar
@@ -422,6 +818,26 @@ if run_data.get('is_monte_carlo'):
         st.metric("Tahmini Süre", f"{sim_duration} Yıl", help="Simüle edilen 150 işlemin ortalama gerçekleşme süresi.")
         
     st.caption(f"📈 **Yıllık Bileşik Getiri (CAGR):** %{cagr:.2f} | **Başlangıç:** $10,000 | **İşlem Sıklığı:** Her ~{round((1.2*365)/150) if sim_duration != '?' else '?'} günde bir işlem")
+
+    # --- ML METRİKLERİ (Kayıtlı Rapordan) ---
+    mm = run_data.get('model_metrics', {})
+    # Nested dict değilse (flatten edilmişse)
+    if not mm and 'model_metrics.accuracy' in run_data:
+        mm = {
+            'accuracy': run_data.get('model_metrics.accuracy'),
+            'precision': run_data.get('model_metrics.precision'),
+            'recall': run_data.get('model_metrics.recall'),
+            'f1': run_data.get('model_metrics.f1')
+        }
+    
+    if mm:
+        st.divider()
+        st.subheader("🤖 Model Performansı (Tüm Dönem)")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Doğruluk (Acc)", f"%{mm.get('accuracy', 0)*100:.1f}")
+        m2.metric("Keskinlik (Prec)", f"%{mm.get('precision', 0)*100:.1f}")
+        m3.metric("Duyarlılık (Rec)", f"%{mm.get('recall', 0)*100:.1f}")
+        m4.metric("F1 Skoru", f"%{mm.get('f1', 0)*100:.1f}")
 
     # Histogram (Dağılım)
     st.subheader("📊 Olası Sonuç Dağılımı")

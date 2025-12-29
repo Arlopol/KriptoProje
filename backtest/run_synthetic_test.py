@@ -14,7 +14,7 @@ from strategies.ml_strategy_logging import MLStrategyLogging
 from data.feature_engineering import prepare_data_for_ml
 from data.synthetic_data_generator import generate_synthetic_data
 
-def run_synthetic_test(duration_days=365, volatility=0.03, drift=0.0002, initial_capital=10000):
+def run_synthetic_test(duration_days=365, volatility=0.03, drift=0.0002, initial_capital=10000, use_regime_switching=True):
     """
     Rastgele (Sentetik) bir piyasa verisi üretir ve modelin bu verideki performansını test eder.
     """
@@ -27,7 +27,8 @@ def run_synthetic_test(duration_days=365, volatility=0.03, drift=0.0002, initial
     df = generate_synthetic_data(duration_days=duration_days, 
                                  start_price=60000, 
                                  volatility=volatility, 
-                                 drift=drift)
+                                 drift=drift,
+                                 use_regime_switching=True)
     
     # 2. Özellik Mühendisliği (Feature Engineering)
     # Modelin çalışması için gereken RSI, SMA, Volatilite vb. bu yeni veriye göre sıfırdan hesaplanmalı.
