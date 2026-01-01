@@ -16,6 +16,7 @@ from data.sentiment_loader import SentimentLoader
 from data.onchain_loader import OnChainLoader
 
 def run_walk_forward_analysis(
+    symbol='BTC-USD', # Yeni parametre
     train_window_days=180, 
     test_window_days=30, 
     start_date='2023-01-01', 
@@ -28,7 +29,8 @@ def run_walk_forward_analysis(
     stop_loss_pct=0.10,
     take_profit_pct=0.20,
     use_trailing_stop=False,
-    trailing_decay=0.10
+    trailing_decay=0.10,
+    use_dynamic_sizing=False
     ):
     """
     Rolling Window Walk-Forward Analysis.
@@ -39,7 +41,7 @@ def run_walk_forward_analysis(
     # ... (Önceki kodların devamı) ...
 
     loader = DataLoader()
-    raw_df = loader.fetch_data('BTC-USD', period='5y', interval='1d')
+    raw_df = loader.fetch_data(symbol, period='5y', interval='1d')
     
     if raw_df.empty:
         return {"error": "Veri indirilemedi."}
@@ -217,6 +219,7 @@ def run_walk_forward_analysis(
     OptimizedStrategy.use_trailing_stop = use_trailing_stop
     OptimizedStrategy.trailing_decay = trailing_decay
     OptimizedStrategy.use_trend_filter = use_trend_filter
+    OptimizedStrategy.use_dynamic_sizing = use_dynamic_sizing
 
     bt = Backtest(bt_data, OptimizedStrategy, cash=initial_capital, commission=0.001, trade_on_close=True)
     stats = bt.run()
@@ -243,6 +246,7 @@ def run_walk_forward_analysis(
     price_dict = {str(k.date()): v for k, v in bt_data['Close'].to_dict().items()}
 
     res = {
+        "symbol": symbol,
         "start_date": str(final_df.index[0].date()),
         "end_date": str(final_df.index[-1].date()),
         "final_equity": stats['Equity Final [$]'],

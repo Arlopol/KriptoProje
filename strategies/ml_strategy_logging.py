@@ -7,6 +7,14 @@ class MLStrategyLogging(MLStrategyTrend):
     Laboratuvar modu için 'Konuşkan' Strateji.
     Her adımda ne düşündüğünü (Logs) kaydeder.
     """
+    # Parent class'taki parametreleri buraya da eklememiz gerekiyor
+    # Çünkü Backtesting.py parametreleri class.__dict__ içinde arıyor.
+    buy_threshold = 0.60 
+    sell_threshold = 0.40
+    stop_loss_pct = 0.05
+    take_profit_pct = 0.15
+    use_trend_filter = True
+    use_dynamic_sizing = False
     
     def init(self):
         super().init()

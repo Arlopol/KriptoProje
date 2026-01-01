@@ -16,8 +16,8 @@ class MLStrategyTrend(Strategy):
     stop_loss_pct = 0.05
     take_profit_pct = 0.15
     
-    # Trend Filtresi (Açık/Kapalı)
-    use_trend_filter = True
+    # Akıllı Sermaye Yönetimi
+    use_dynamic_sizing = False
     
     # Trailing Stop Ayarları
     use_trailing_stop = False
@@ -43,9 +43,6 @@ class MLStrategyTrend(Strategy):
                 # Zirve Karı Güncelle
                 self.peak_pl = max(self.peak_pl, pl_pct)
                 
-                # Zirveden geri çekilme kontrolü (Sadece kardaysak veya belirli eşik?)
-                # Genelde trailing stop kara geçince aktif olur ama basitlik için zirveden düşüşe bakalım.
-                # Eğer Zirve %20 ise ve Decay %10 ise, %10'a düşünce satar.
                 if (self.peak_pl - pl_pct) > self.trailing_decay:
                     self.position.close()
                     self.peak_pl = 0
@@ -57,13 +54,11 @@ class MLStrategyTrend(Strategy):
                 self.peak_pl = 0
                 return
                 
-            # Sabit Take Profit İPTAL EDİLDİ
-            # Boğa piyasasında erken çıkmayı engellemek için TP'yi kaldırıyoruz.
-            # Sadece Trailing Stop veya Trend Dönüşü (Sell Sinyali) ile çıkılacak.
-            # if not self.use_trailing_stop and pl_pct > self.take_profit_pct:
-            #    self.position.close()
-            #    self.peak_pl = 0
-            #    return
+            # Sabit Take Profit (Eğer Trailing Stop Kapalıysa)
+            if not self.use_trailing_stop and pl_pct > self.take_profit_pct:
+               self.position.close()
+               self.peak_pl = 0
+               return
         else:
             self.peak_pl = 0 # Pozisyon yoksa sıfırla
 
@@ -77,10 +72,13 @@ class MLStrategyTrend(Strategy):
         prob_up = self.prob[-1]
         
         # EĞER BOĞA PİYASASINDAYSAK (Fiyat > SMA) VE Filtre Açıksa, Alım Eşiğini Düşür!
-        # Çünkü genel rüzgar arkamızda, modelin azıcık olumlu olması yeterli.
         current_buy_thresh = self.buy_threshold
         if self.use_trend_filter and is_bull_market:
-            current_buy_thresh = 0.50 # %50 üstü her olumlu sinyalde al
+            current_buy_thresh = 0.50 
+        
+        # --- POZİSYON BÜYÜKLÜĞÜ HESABI (Smart Sizing) ---
+        size_to_trade = 0.95
+        confidence = 0.0
         
         # --- LONG GİRİŞ ---
         # Model AL diyor
@@ -88,7 +86,17 @@ class MLStrategyTrend(Strategy):
             if self.position.is_short:
                 self.position.close()
             if not self.position.is_long:
-                self.buy(size=0.95)
+                
+                # Dinamik Boyut Hesabı
+                if self.use_dynamic_sizing:
+                    # Güven (0.5 - 1.0 arası) -> (0.0 - 1.0 arası) * 2
+                    # Örn: 0.60 -> 0.20 (%20)
+                    # Örn: 0.80 -> 0.60 (%60)
+                    # Örn: 0.90 -> 0.80 (%80)
+                    raw_size = (prob_up - 0.5) * 2
+                    size_to_trade = max(0.10, min(0.95, raw_size))
+                
+                self.buy(size=size_to_trade)
                 
         # --- SHORT GİRİŞ ---
         # Model %60+ SAT diyor (prob_up < 0.40)
@@ -104,11 +112,16 @@ class MLStrategyTrend(Strategy):
                 if self.position.is_long:
                     self.position.close()
                 if not self.position.is_short:
-                    self.sell(size=0.95)
+                    
+                    # Dinamik Boyut Hesabı (Short için Güven = 1 - prob_up)
+                    if self.use_dynamic_sizing:
+                        prob_down = 1.0 - prob_up
+                        raw_size = (prob_down - 0.5) * 2
+                        size_to_trade = max(0.10, min(0.95, raw_size))
+                        
+                    self.sell(size=size_to_trade)
                     
         # --- NÖTR ---
         else:
             # Model kararsızsa (%40 - %60 arası) POZİSYONU KAPATMA!
-            # Trend stratejisinde "Bırak koşsun" mantığı işler.
-            # Sadece Sell Sinyali veya Stop Loss ile çık.
             pass

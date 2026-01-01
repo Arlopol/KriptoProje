@@ -85,7 +85,7 @@ df['is_monte_carlo'] = df.apply(lambda x: pd.notna(x.get('simulation_results.mea
 st.sidebar.header("📂 Rapor Gezgini")
 
 # 1. Kategori Seçimi
-category = st.sidebar.radio("Kategori:", ["📈 Model Sonuçları", "🛡️ Sağlamlık Testleri", "🎲 Simülasyon Testleri", "🧪 Laboratuvar (Canlı Test)", "🌪️ Kaos Testi (Sentetik Veri)"])
+category = st.sidebar.radio("Kategori:", ["📈 Model Sonuçları", "🛡️ Sağlamlık Testleri", "🎲 Simülasyon Testleri", "🧪 Laboratuvar (Canlı Test)"])
 
 selected_filename = None
 
@@ -94,38 +94,59 @@ if category == "🧪 Laboratuvar (Canlı Test)":
     st.info("Bu modda, yapay zekayı belirli bir tarih aralığında çalıştırıp **'Neden?'** sorusuna cevap arayabilirsiniz.")
     
     # Girdiler
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
+        lab_symbol = st.selectbox("Sembol (Coin)", ["BTC-USD", "ETH-USD", "SOL-USD", "AVAX-USD", "XRP-USD"])
+    with c2:
         # Varsayılan: Son 1 yıl
         default_start = datetime.now() - timedelta(days=365)
         start_date = st.date_input("Başlangıç Tarihi", value=default_start)
-    with c2:
+    with c3:
         end_date = st.date_input("Bitiş Tarihi", value=datetime.now())
         
     initial_capital = st.number_input("Başlangıç Sermayesi ($)", value=10000, step=1000)
     
+    with st.expander("🛠️ Gelişmiş Ayarlar (Risk & Strateji)", expanded=False):
+        c_adv1, c_adv2 = st.columns(2)
+        with c_adv1:
+            lab_buy_thresh = st.slider("Alış Eşiği (Güven %)", 0.50, 0.90, 0.60, 0.01)
+            lab_sell_thresh = st.slider("Satış Eşiği (Güven %)", 0.10, 0.50, 0.40, 0.01)
+        with c_adv2:
+            lab_sl = st.slider("Stop Loss (%)", 0.01, 0.20, 0.05, 0.01)
+            lab_tp = st.slider("Take Profit (%)", 0.05, 0.50, 0.15, 0.01)
+            lab_use_trend = st.checkbox("Trend Filtresi (SMA 200)", value=True, help="Boğa piyasasında Short açmayı engeller.")
+            lab_use_dynamic = st.checkbox("🧠 Akıllı Sermaye (Güvene Göre)", value=False, help="Düşük güven varsa az para yatırır.")
+    
     if st.button("🚀 Senaryoyu Çalıştır", type="primary"):
-        with st.spinner("Yapay Zeka Düşünüyor..."):
+        with st.spinner(f"{lab_symbol} için Yapay Zeka Düşünüyor..."):
             from backtest.run_scenario import run_scenario
-            results = run_scenario(str(start_date), str(end_date), initial_capital)
+            results = run_scenario(str(start_date), str(end_date), initial_capital, symbol=lab_symbol,
+                                   buy_threshold=lab_buy_thresh, sell_threshold=lab_sell_thresh, 
+                                   stop_loss=lab_sl, take_profit=lab_tp, use_trend=lab_use_trend,
+                                   use_dynamic_sizing=lab_use_dynamic)
             
             if "error" in results:
                 st.error(results["error"])
             else:
                 # Sonuçları Göster
                 st.subheader("📊 Test Sonuçları")
-                m1, m2, m3, m4, m5 = st.columns(5)
+                m1, m2, m3, m4, m5, m6 = st.columns(6)
                 m1.metric("Son Sermaye", f"${results['final_equity']:,.0f}", f"%{results['return_pct']:.2f}")
-                m2.metric("İşlem Sayısı", results['total_trades'])
-                m3.metric("Max Drawdown", f"%{results['max_drawdown']:.2f}")
-                m4.metric("Kazanma Oranı", f"%{results['win_rate']:.1f}")
+                
+                bh_ret = results.get('bh_return_pct', 0)
+                alpha = results['return_pct'] - bh_ret
+                m2.metric("Al-Tut Getirisi", f"%{bh_ret:.2f}", f"Fark: %{alpha:.2f}")
+
+                m3.metric("İşlem Sayısı", results['total_trades'])
+                m4.metric("Max Drawdown", f"%{results['max_drawdown']:.2f}")
+                m5.metric("Kazanma Oranı", f"%{results['win_rate']:.1f}")
                 
                 # Model Performansı (Genel Accuracy)
                 metrics = results.get('metrics', {})
                 train_metrics = results.get('train_metrics', {})
                 acc_val = metrics.get('accuracy', 0) * 100
                 train_acc = train_metrics.get('accuracy', 0) * 100
-                m5.metric("Model Doğruluğu", f"%{acc_val:.1f}", f"Eğitim: %{train_acc:.1f}", delta_color="normal")
+                m6.metric("Model Doğruluğu", f"%{acc_val:.1f}", f"Eğitim: %{train_acc:.1f}", delta_color="normal")
                 
                 # --- DETAYLI METRİKLER ---
                 with st.expander("📈 Detaylı Model Performansı (Accuracy, Precision, Recall)", expanded=False):
@@ -208,113 +229,21 @@ if category == "🧪 Laboratuvar (Canlı Test)":
     # Laboratuvar modu seçiliyse aşağısındaki standart raporu gösterme
     st.stop()
 
-elif category == "🌪️ Kaos Testi (Sentetik Veri)":
-    st.header("🌪️ Kaos Testi: Beklenmedik Senaryolar")
-    st.info("Bu modda, yapay zekayı hiç yaşanmamış, **rastgele (sentetik)** piyasa koşullarında test edebilirsiniz. Amaç, modelin aşırı volatilite veya ani trend değşimlerine karşı dayanıklılığını ölçmektir.")
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("⚙️ Piyasa Parametreleri")
-        duration = st.slider("Simülasyon Süresi (Gün)", 250, 730, 365, help="Modelin SMA 200 hesaplayabilmesi için en az 250 gün gereklidir.")
-        volatility = st.slider("Volatilite (Günlük Risk)", 0.01, 0.10, 0.03, 0.01, help="0.02 = %2 Günlük Değişim (Normal), 0.08 = Kriz")
-    
-    with c2:
-        st.subheader("📈 Trend Eğilimi")
-        drift = st.slider("Piyasa Eğilimi (Drift)", -0.005, 0.005, 0.0002, 0.0001, format="%.4f", help="Pozitif = Boğa, Negatif = Ayı")
-        initial_capital = st.number_input("Başlangıç Sermayesi ($)", value=10000, step=1000, key="chaos_cap")
-        
-    use_realistic = st.checkbox("🧠 Akıllı Kaos (Rejim Değişimi & Şoklar)", value=True, help="Aktif edilirse, piyasa sürekli aynı kalmaz; Boğa, Ayı ve Yatay döngüler arasında geçiş yapar. Ani çöküşler yaşanabilir.")
 
-    if st.button("🌪️ Kaos Yarat ve Test Et", type="primary"):
-        with st.spinner("Yapay Piyasa Oluşturuluyor ve Model Sınanıyor..."):
-            try:
-                from backtest.run_synthetic_test import run_synthetic_test
-                results = run_synthetic_test(duration_days=duration, volatility=volatility, drift=drift, initial_capital=initial_capital, use_regime_switching=use_realistic)
-                
-                if "error" in results:
-                    st.error(results["error"])
-                else:
-                    # Sonuçları Göster
-                    st.subheader("📊 Kaos Testi Sonuçları")
-                    m1, m2, m3, m4 = st.columns(4)
-                    m1.metric("Son Sermaye", f"${results['final_equity']:,.0f}", f"%{results['return_pct']:.2f}")
-                    m2.metric("İşlem Sayısı", results['total_trades'])
-                    m3.metric("Max Drawdown", f"%{results['max_drawdown']:.2f}")
-                    m4.metric("Kazanma Oranı", f"%{results['win_rate']:.1f}")
-
-                    # --- İNTERAKTİF GRAFİK (Log Visualization) ---
-                    st.markdown("---")
-                    st.subheader("🧠 Yapay Zeka Günlüğü (Sentetik)")
-                    
-                    logs = results.get('logs', [])
-                    if logs:
-                        df_logs = pd.DataFrame(logs)
-                        # Sentetik veride tarih 2025'ten başlıyor
-                        df_logs['Date'] = pd.to_datetime(df_logs['Date'])
-                        
-                        fig_log = go.Figure()
-                        
-                        # 1. Fiyat Çizgisi
-                        fig_log.add_trace(go.Scatter(
-                            x=df_logs['Date'], 
-                            y=df_logs['Price'],
-                            mode='lines',
-                            name='Sentetik Bitcoin Fiyatı',
-                            line=dict(color='#8A2BE2', width=2) # Mor renk
-                        ))
-                        
-                        # Renk Haritası
-                        color_map = {
-                            "ALIM": "green",
-                            "SATIŞ": "red",
-                            "PAS GEÇ": "orange",
-                            "BEKLE": "gray",
-                            "POZİSYONU KORU": "blue",
-                            "TERS İŞLEM": "purple",
-                            "POZİSYON KAPAT": "black"
-                        }
-                        
-                        df_logs['Color'] = df_logs['Action'].apply(lambda x: next((v for k, v in color_map.items() if k in x), "gray"))
-                        df_logs['Size'] = df_logs['Action'].apply(lambda x: 12 if "ALIM" in x or "SATIŞ" in x or "KAPAT" in x else 6)
-                        
-                        fig_log.add_trace(go.Scatter(
-                            x=df_logs['Date'],
-                            y=df_logs['Price'],
-                            mode='markers',
-                            name='Kararlar',
-                            marker=dict(
-                                color=df_logs['Color'],
-                                size=df_logs['Size'],
-                                line=dict(width=1, color='DarkSlateGrey')
-                            ),
-                            text=df_logs['Action'],
-                            customdata=df_logs['Reason'],
-                            hovertemplate="<b>%{text}</b><br>Fiyat: $%{y:,.0f}<br>💭 <i>%{customdata}</i><extra></extra>"
-                        ))
-                        
-                        fig_log.update_layout(
-                            title="Sentetik Piyasada Yapay Zeka Kararları",
-                            xaxis_title="Simülasyon Tarihi",
-                            yaxis_title="Fiyat ($)",
-                            height=600,
-                            hovermode="x unified"
-                        )
-                        
-                        st.plotly_chart(fig_log, use_container_width=True)
-                        
-                        with st.expander("📜 Detaylı Log Listesi"):
-                            st.dataframe(df_logs[['Date', 'Action', 'Price', 'Trend', 'Reason']])
-
-            except Exception as e:
-                st.error(f"Test sırasında kritik hata: {str(e)}")
-                # Detaylı hata için
-                import traceback
-                st.code(traceback.format_exc())
-
-    st.stop()
 
 elif category == "🎲 Simülasyon Testleri":
-    st.header("🎲 Monte Carlo Simülasyonu")
+    # Son yapılan analizin sembolünü bulmaya çalış
+    wf_last_path = "reports/walk_forward_last_run.json"
+    wf_symbol_display = ""
+    if os.path.exists(wf_last_path):
+        try:
+            with open(wf_last_path, 'r', encoding='utf-8') as f:
+                last_res = json.load(f)
+                sym = last_res.get('symbol', 'Bilinmiyor')
+                wf_symbol_display = f" - (Analiz Kaynağı: {sym})"
+        except: pass
+
+    st.header(f"🎲 Monte Carlo Simülasyonu{wf_symbol_display}")
     
     # İki Alt Mod: Yeni Simülasyon veya Rapor Görüntüle
     mc_mode = st.radio("Seçiminiz:", ["🔍 Geçmiş Raporları İncele", "⚡ Yeni Simülasyon Başlat"], horizontal=True)
@@ -532,13 +461,16 @@ elif category == "🛡️ Sağlamlık Testleri":
         elif test_type == "🔴 Yürüyen Analiz (Walk-Forward)":
             st.info("**Yürüyen Analiz (Walk-Forward):** Modelin adaptasyon yeteneğini ölçer. Geçmişten bugüne gelirken, her ay modeli **yeni verilerle yeniden eğitiriz (Re-training).** Böylece modelin 'ezberci' mi yoksa 'öğrenen' mi olduğunu anlarız.\n\n*Not: Mevcut 'Başarılı Modelinizi' bozmaz, geçici modeller eğitir.*")
             
-            # Parametreler
-            c1, c2, c3 = st.columns(3)
+            st.subheader("⚙️ Parametreler")
+            
+            c1, c2, c3, c4 = st.columns(4)
             with c1:
-                wf_strat_type = st.selectbox("Strateji Tipi", ["Profesyonel (Filtreli)", "Maceracı (Filtresiz)"], index=0)
+                wf_symbol = st.selectbox("Sembol", ["BTC-USD", "ETH-USD", "SOL-USD", "AVAX-USD", "XRP-USD"], index=0)
             with c2:
-                wf_train_window = st.number_input("Eğitim Penceresi (Gün)", 90, 720, 365, help="Model her seferinde geçmiş kaç günü öğrensin?")
+                wf_strat_type = st.selectbox("Strateji Tipi", ["Profesyonel (Filtreli)", "Maceracı (Risk Seven)"])
             with c3:
+                wf_train_window = st.number_input("Eğitim Penceresi (Gün)", 90, 720, 365, help="Model her seferinde geçmiş kaç günü öğrensin?")
+            with c4:
                 wf_step = st.selectbox("Yeniden Eğitim Sıklığı", [30, 60, 90], index=0, format_func=lambda x: f"Her {x} Günde Bir")
                 
             use_filt = True if wf_strat_type == "Profesyonel (Filtreli)" else False
@@ -557,7 +489,7 @@ elif category == "🛡️ Sağlamlık Testleri":
                 
                 c3, c4 = st.columns(2)
                 wf_stop_loss = c3.slider("Stop Loss (Zarar Kes %)", 0.01, 0.20, 0.10, 0.01)
-                wf_take_profit = c4.slider("Take Profit (Kar Al %)", 0.05, 0.50, 0.20, 0.05)
+                wf_take_profit = c4.slider("Kar Al (Take Profit %)", 0.05, 0.50, 0.20, 0.05)
                 
                 # Trailing Stop Seçeneği
                 st.markdown("---")
@@ -565,6 +497,8 @@ elif category == "🛡️ Sağlamlık Testleri":
                 trail_decay = 0.10
                 if use_trail:
                     trail_decay = st.slider("İz Süren Stop Eşiği (Trailing Decay)", 0.05, 0.30, 0.10, 0.01, help="Fiyat zirveden ne kadar düşünce satılsın?")
+                    
+                wf_use_dynamic = st.checkbox("🧠 Akıllı Sermaye (Güvene Göre)", value=False, help="Düşük güven varsa az para yatırır.")
 
             if st.button("🚀 Yürüyen Analizi Başlat (Uzun Sürebilir)", type="primary"):
                 progress_bar = st.progress(0)
@@ -575,8 +509,9 @@ elif category == "🛡️ Sağlamlık Testleri":
                     # Wrapper fonksiyonu import et (veya dosyadaki yeni fonksiyonu kullan)
                     from backtest.run_walk_forward import run_walk_forward_and_save
                     
-                    with st.spinner("Model zaman yolculuğuna çıktı... Her adımda yeniden eğitiliyor..."):
+                    with st.spinner(f"{wf_symbol} için model zaman yolculuğuna çıktı... Her adımda yeniden eğitiliyor..."):
                         wf_res = run_walk_forward_and_save(
+                            symbol=wf_symbol,
                             train_window_days=wf_train_window,
                             test_window_days=wf_step,
                             start_date=str(wf_start_date),
@@ -588,7 +523,8 @@ elif category == "🛡️ Sağlamlık Testleri":
                             stop_loss_pct=wf_stop_loss,
                             take_profit_pct=wf_take_profit,
                             use_trailing_stop=use_trail,
-                            trailing_decay=trail_decay
+                            trailing_decay=trail_decay,
+                            use_dynamic_sizing=wf_use_dynamic
                         )
                     
                     if "error" in wf_res:
