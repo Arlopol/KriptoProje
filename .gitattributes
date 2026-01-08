@@ -1,0 +1,5 @@
+# Ignore generated reports from language statistics
+reports/** linguist-vendored
+reports/* linguist-vendored
+*.html linguist-vendored
+*.json linguist-vendored
