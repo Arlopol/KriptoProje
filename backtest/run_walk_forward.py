@@ -14,9 +14,16 @@ from data.feature_engineering import prepare_data_for_ml
 from strategies.ml_strategy_logging import MLStrategyLogging
 from data.sentiment_loader import SentimentLoader
 from data.onchain_loader import OnChainLoader
+from sklearn.ensemble import RandomForestClassifier
+from scipy.stats import ttest_rel
+from sklearn.preprocessing import MinMaxScaler
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 
 def run_walk_forward_analysis(
-    symbol='BTC-USD', # Yeni parametre
+    symbol='BTC-USD', 
+    model_type='XGBoost', # 'XGBoost', 'RandomForest', 'LSTM'
     train_window_days=180, 
     test_window_days=30, 
     start_date='2023-01-01', 
@@ -138,46 +145,95 @@ def run_walk_forward_analysis(
             current_idx += test_window_days
             continue
             
-        # Modeli Eğit (Hyperparametreler train_xgboost.py'dan alındı)
-        model = XGBClassifier(
-            n_estimators=200,
-            max_depth=6,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            random_state=42,
-            n_jobs=-1,
-            eval_metric='logloss'
-        )
-        
+        # Veri Hazırlığı (Her model için ortak)
         X_train = train_data[features]
         y_train = train_data['Target']
-        
-        # Eğitim
-        # print(f"  Eğitiliyor: {train_data.index[0].date()} -> {train_data.index[-1].date()}")
-        model.fit(X_train, y_train)
-        
-        # Test (Prediction) - OUT OF SAMPLE
         X_test = test_data[features]
-        
-        # Tahminleri Test Verisine Ekle
-        preds = model.predict(X_test)
-        proba = model.predict_proba(X_test)[:, 1]
+
+        # Model Seçimi ve Eğitim
+        if model_type == 'RandomForest':
+            # Random Forest
+            model = RandomForestClassifier(
+                n_estimators=200, 
+                max_depth=10, 
+                random_state=42, 
+                n_jobs=-1
+            )
+            model.fit(X_train, y_train)
+            preds = model.predict(X_test)
+            proba = model.predict_proba(X_test)[:, 1]
+
+        elif model_type == 'LSTM':
+            # LSTM (Basit Yapı)
+            # Scaling
+            scaler = MinMaxScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_test_scaled = scaler.transform(X_test)
+
+            # Reshape (Samples, 1, Features)
+            X_train_rs = X_train_scaled.reshape((X_train_scaled.shape[0], 1, X_train_scaled.shape[1]))
+            X_test_rs = X_test_scaled.reshape((X_test_scaled.shape[0], 1, X_test_scaled.shape[1]))
+
+            # Model Definition
+            model = Sequential([
+                Input(shape=(1, X_train_rs.shape[2])),
+                LSTM(50, activation='relu', return_sequences=False),
+                Dropout(0.2),
+                Dense(1, activation='sigmoid')
+            ])
+            model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+            
+            # Hızlı Eğitim (Epoch az tutuyoruz)
+            model.fit(X_train_rs, y_train, epochs=10, batch_size=32, verbose=0)
+
+            # Predict
+            proba = model.predict(X_test_rs, verbose=0).flatten()
+            preds = (proba > 0.5).astype(int)
+
+        else:
+            # Varsayılan: XGBoost
+            model = XGBClassifier(
+                n_estimators=200,
+                max_depth=6,
+                learning_rate=0.05,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                random_state=42,
+                n_jobs=-1,
+                eval_metric='logloss'
+            )
+            model.fit(X_train, y_train)
+            preds = model.predict(X_test)
+            proba = model.predict_proba(X_test)[:, 1]
         
         test_data['ML_Signal'] = preds
         test_data['ML_Prob'] = proba
         
         # Modelin o dönemki test başarısı (Accuracy)
-        from sklearn.metrics import accuracy_score
+        from sklearn.metrics import accuracy_score, f1_score, recall_score, roc_auc_score
         # Target'ı kontrol et (Actual)
         actual_target = (test_data['Close'].shift(-1) > test_data['Close']).astype(int)
         # Shift yüzünden son eleman nan olur, accuracy hesabında düşelim
         mask = actual_target.notna()
         if mask.sum() > 0:
-            acc = accuracy_score(actual_target[mask], preds[mask])
+            y_true = actual_target[mask]
+            y_pred = preds[mask]
+            y_prob = proba[mask]
+            
+            acc = accuracy_score(y_true, y_pred)
+            f1 = f1_score(y_true, y_pred, zero_division=0)
+            recall = recall_score(y_true, y_pred, zero_division=0)
+            try:
+                auc = roc_auc_score(y_true, y_prob)
+            except ValueError:
+                auc = 0.5 # Tek sınıf varsa hata verir
+
             model_stats.append({
                 "period": str(test_data.index[0].date()),
-                "accuracy": acc
+                "accuracy": acc,
+                "f1_score": f1,
+                "recall": recall,
+                "auc": auc
             })
         
         # Sonuçları listeye ekle
@@ -245,8 +301,74 @@ def run_walk_forward_analysis(
     # Fiyat Verisi (Grafik için)
     price_dict = {str(k.date()): v for k, v in bt_data['Close'].to_dict().items()}
 
+    # İstatistiksel Anlamlılık Testi (Paired t-test)
+    # Günlük Getirileri Hesapla
+    strat_daily_ret = equity_curve['Equity'].pct_change().dropna()
+    bh_daily_ret = bh_series.pct_change().dropna()
+
+    # Indexleri eşle
+    common_idx = strat_daily_ret.index.intersection(bh_daily_ret.index)
+    strat_rets = strat_daily_ret.loc[common_idx]
+    bh_rets = bh_daily_ret.loc[common_idx]
+
+    # Paired t-test (Returns)
+    p_value = 1.0
+    conf_interval = (0.0, 0.0)
+    
+    # Bootstrap Sharpe (Significance)
+    sharpe_p_value = 1.0
+    
+    if len(strat_rets) > 10:
+        # 1. T-Test on Returns
+        t_stat, p_value = ttest_rel(strat_rets, bh_rets)
+        
+        diff = strat_rets - bh_rets
+        mean_diff = diff.mean()
+        std_diff = diff.std(ddof=1)
+        n = len(diff)
+        from scipy.stats import t
+        t_crit = t.ppf(0.975, df=n-1)
+        margin_error = t_crit * (std_diff / np.sqrt(n))
+        conf_interval = (mean_diff - margin_error, mean_diff + margin_error)
+
+        # 2. Bootstrap Sharpe Diff
+        # H0: Sharpe_Strat <= Sharpe_BH
+        # H1: Sharpe_Strat > Sharpe_BH
+        n_boot = 1000
+        sharpe_diffs = []
+        data = np.column_stack((strat_rets, bh_rets))
+        
+        for _ in range(n_boot):
+            # Resample with replacement
+            indices = np.random.randint(0, n, n)
+            sample = data[indices]
+            s_ret = sample[:, 0]
+            b_ret = sample[:, 1]
+            
+            # Sharpe Calc (Annulized) - Risk Free = 0 for simplicity or relative comparison
+            if s_ret.std() > 1e-6:
+                s_sharpe = (s_ret.mean() / s_ret.std()) * np.sqrt(365)
+            else:
+                s_sharpe = 0
+            
+            if b_ret.std() > 1e-6:
+                b_sharpe = (b_ret.mean() / b_ret.std()) * np.sqrt(365)
+            else:
+                b_sharpe = 0
+                
+            sharpe_diffs.append(s_sharpe - b_sharpe)
+            
+        # P-Value: Fraction of samples where Strategy was WORSE or EQUAL to Buy&Hold
+        sharpe_diffs = np.array(sharpe_diffs)
+        sharpe_p_value = (sharpe_diffs <= 0).mean()
+
     res = {
         "symbol": symbol,
+        "model_type": model_type,
+        "p_value": p_value,
+        "conf_interval_low": conf_interval[0],
+        "conf_interval_high": conf_interval[1],
+        "sharpe_p_value": sharpe_p_value,
         "start_date": str(final_df.index[0].date()),
         "end_date": str(final_df.index[-1].date()),
         "final_equity": stats['Equity Final [$]'],
@@ -254,6 +376,7 @@ def run_walk_forward_analysis(
         "bh_return": bh_return, # Benchmark
         "sharpe_ratio": stats['Sharpe Ratio'],
         "max_drawdown": stats['Max. Drawdown [%]'],
+        "profit_factor": stats['Profit Factor'], # Backtesting.py provides 'Profit Factor' usually
         "win_rate": stats['Win Rate [%]'],
         "total_trades": stats['# Trades'],
         "logs": logs,

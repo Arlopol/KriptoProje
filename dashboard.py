@@ -479,6 +479,13 @@ elif category == "🛡️ Sağlamlık Testleri":
             
             import datetime
             wf_start_date = st.date_input("Analiz Başlangıç Tarihi", datetime.date(2023, 1, 1))
+            
+            # Model Seçimi
+            wf_model_type = st.selectbox(
+                "🤖 Yapay Zeka Modeli", 
+                ["XGBoost", "RandomForest", "LSTM"],
+                help="Kullanılacak algoritmayı seçin. LSTM biraz yavaş çalışabilir."
+            )
                 
                 
             # Eşik Değer Ayarları (Advanced)
@@ -500,7 +507,111 @@ elif category == "🛡️ Sağlamlık Testleri":
                     
                 wf_use_dynamic = st.checkbox("🧠 Akıllı Sermaye (Güvene Göre)", value=False, help="Düşük güven varsa az para yatırır.")
 
-            if st.button("🚀 Yürüyen Analizi Başlat (Uzun Sürebilir)", type="primary"):
+            # Butonlar Yan Yana
+            c_btn1, c_btn2 = st.columns([1, 1])
+            start_single = c_btn1.button("🚀 Tekil Analizi Başlat", type="primary")
+            start_compare = c_btn2.button("⚔️ Modelleri Yarıştır (XGB vs RF vs LSTM)", type="secondary")
+
+            if start_compare:
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                status_text.text("Yarış Başlıyor...")
+                
+                # Import
+                from backtest.run_walk_forward import run_walk_forward_and_save
+                
+                models_to_test = ["XGBoost", "RandomForest", "LSTM"]
+                results_list = []
+                
+                for idx, model_name in enumerate(models_to_test):
+                    status_text.text(f"⏳ Çalışıyor: {model_name}...")
+                    
+                    with st.spinner(f"{model_name} eğitiliyor ve test ediliyor..."):
+                        res = run_walk_forward_and_save(
+                            symbol=wf_symbol,
+                            model_type=model_name,
+                            train_window_days=wf_train_window,
+                            test_window_days=wf_step,
+                            start_date=str(wf_start_date),
+                            use_trend_filter=use_filt,
+                            use_sentiment=use_sent,
+                            use_onchain=use_oc,
+                            buy_threshold=wf_buy_thresh,
+                            sell_threshold=wf_sell_thresh,
+                            stop_loss_pct=wf_stop_loss,
+                            take_profit_pct=wf_take_profit,
+                            use_trailing_stop=use_trail,
+                            trailing_decay=trail_decay,
+                            use_dynamic_sizing=wf_use_dynamic
+                        )
+                        
+                        if "error" in res:
+                            st.error(f"{model_name} Hatası: {res['error']}")
+                            continue
+                            
+                        # Metrikleri Hazırla
+                        # Ortalama ML Metrikleri
+                        acc_hist = pd.DataFrame(res.get('model_accuracy_history', []))
+                        avg_acc = acc_hist['accuracy'].mean() if not acc_hist.empty else 0
+                        avg_f1 = acc_hist.get('f1_score', pd.Series([0])).mean() if not acc_hist.empty else 0
+                        avg_recall = acc_hist.get('recall', pd.Series([0])).mean() if not acc_hist.empty else 0
+                        avg_auc = acc_hist.get('auc', pd.Series([0])).mean() if not acc_hist.empty else 0
+                        
+                        row = {
+                            "Model": model_name,
+                            "Final Sermaye ($)": int(res['final_equity']),
+                            "Net Getiri (%)": round(res['return_pct'], 2),
+                            "Al-Tut Farkı (%)": round(res['return_pct'] - res.get('bh_return', 0), 2),
+                            "Sharpe": round(res['sharpe_ratio'], 2),
+                            "Drawdown (%)": round(res['max_drawdown'], 2),
+                            "Kar Faktörü": round(res.get('profit_factor', 0), 2),
+                            "İşlem Sayısı": res['total_trades'],
+                            "Ort. Accuracy": round(avg_acc, 2),
+                            "Ort. F1": round(avg_f1, 2),
+                            "Ort. Recall": round(avg_recall, 2),
+                            "Ort. AUC": round(avg_auc, 2),
+                            "P-Value": round(res.get('p_value', 1.0), 4)
+                        }
+                        results_list.append(row)
+                    
+                    progress_bar.progress((idx + 1) / len(models_to_test))
+                
+                status_text.text("✅ Yarış Tamamlandı!")
+                if results_list:
+                    st.divider()
+                    st.subheader("🏆 Büyük Karşılaştırma Sonucu")
+                    df_compare = pd.DataFrame(results_list)
+                    st.dataframe(df_compare.style.highlight_max(axis=0, color='darkgreen'), use_container_width=True)
+                    
+                    # Grafiksel Tablo 1: Finansal Performans
+                    import plotly.graph_objects as go
+                    
+                    # Kolonları İkiye Böl
+                    cols_fin = ["Model", "Final Sermaye ($)", "Net Getiri (%)", "Al-Tut Farkı (%)", "Sharpe", "Drawdown (%)", "Kar Faktörü"]
+                    cols_ml = ["Model", "Ort. Accuracy", "Ort. F1", "Ort. Recall", "Ort. AUC", "P-Value"]
+                    
+                    df_fin = df_compare[cols_fin]
+                    df_ml = df_compare[cols_ml]
+
+                    # Tablo 1
+                    fig_fin = go.Figure(data=[go.Table(
+                        header=dict(values=cols_fin, fill_color='paleturquoise', align='left', font=dict(size=12, color='black')),
+                        cells=dict(values=[df_fin[k].tolist() for k in cols_fin], fill_color='lavender', align='left', font=dict(size=11, color='black'))
+                    )])
+                    fig_fin.update_layout(title="Tablo 1: Modellerin Finansal Performans Karşılaştırması", margin=dict(l=0, r=0, t=30, b=0), height=200)
+                    st.plotly_chart(fig_fin, use_container_width=True)
+
+                    # Tablo 2
+                    fig_ml = go.Figure(data=[go.Table(
+                        header=dict(values=cols_ml, fill_color='peachpuff', align='left', font=dict(size=12, color='black')),
+                        cells=dict(values=[df_ml[k].tolist() for k in cols_ml], fill_color='papayawhip', align='left', font=dict(size=11, color='black'))
+                    )])
+                    fig_ml.update_layout(title="Tablo 2: Modellerin Yapay Zeka ve İstatistik Performansı", margin=dict(l=0, r=0, t=30, b=0), height=200)
+                    st.plotly_chart(fig_ml, use_container_width=True)
+
+                    st.success("👆 Tablolar bölündü! Artık A4 kağıdına rahatça sığacaktır.")
+
+            if start_single:
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
@@ -512,6 +623,7 @@ elif category == "🛡️ Sağlamlık Testleri":
                     with st.spinner(f"{wf_symbol} için model zaman yolculuğuna çıktı... Her adımda yeniden eğitiliyor..."):
                         wf_res = run_walk_forward_and_save(
                             symbol=wf_symbol,
+                            model_type=wf_model_type,
                             train_window_days=wf_train_window,
                             test_window_days=wf_step,
                             start_date=str(wf_start_date),
@@ -533,18 +645,50 @@ elif category == "🛡️ Sağlamlık Testleri":
                         progress_bar.progress(100)
                         st.success("✅ Analiz Tamamlandı!")
                         
-                        # Sonuç özet
-                        c1, c2, c3, c4, c5 = st.columns(5)
+                        # Sonuç özet (Artık 6 Kolon: Profit Factor ekliyoruz)
+                        c1, c2, c3, c4, c5, c6 = st.columns(6)
                         
                         bh_return = wf_res.get('bh_return', 0.0)
                         strat_return = wf_res['return_pct']
                         diff_return = strat_return - bh_return
                         
+                        # Profit Factor (Eski versiyonlarda yoksa 0 ata)
+                        profit_factor = wf_res.get('profit_factor', 0.0)
+
                         c1.metric("Final Sermaye", f"${wf_res['final_equity']:,.0f}", f"Net: %{strat_return:.1f}")
                         c2.metric("Al-Tut Farkı", f"%{diff_return:.1f}", delta=f"{diff_return:.1f}%")
                         c3.metric("Sharpe Oranı", f"{wf_res['sharpe_ratio']:.2f}")
                         c4.metric("Max Drawdown", f"%{wf_res['max_drawdown']:.2f}")
-                        c5.metric("İşlem Sayısı", wf_res['total_trades'])
+                        c5.metric("Kar Faktörü", f"{profit_factor:.2f}") 
+                        c6.metric("İşlem Sayısı", wf_res['total_trades'])
+
+                        # İstatistiksel Anlamlılık (P-Value & Confidence Interval)
+                        st.divider()
+                        st.subheader("🧪 İstatistiksel Testler (Hypothesis Testing)")
+                        
+                        c_stat1, c_stat2, c_stat3 = st.columns(3)
+                        
+                        pval = wf_res.get('p_value', 1.0)
+                        sharpe_pval = wf_res.get('sharpe_p_value', 1.0)
+                        conf_low = wf_res.get('conf_interval_low', 0.0)
+                        conf_high = wf_res.get('conf_interval_high', 0.0)
+                        
+                        # 1. T-Test (Returns)
+                        if pval < 0.05:
+                            c_stat1.success(f"**Getiri T-Testi:**\nP={pval:.4f} (Anlamlı)")
+                        else:
+                            c_stat1.warning(f"**Getiri T-Testi:**\nP={pval:.4f} (>0.05)")
+                            
+                        # 2. Bootstrap (Sharpe)
+                        if sharpe_pval < 0.05:
+                            c_stat2.success(f"**Sharpe Bootstrap:**\nP={sharpe_pval:.4f} (Anlamlı!)")
+                        else:
+                            c_stat2.warning(f"**Sharpe Bootstrap:**\nP={sharpe_pval:.4f} (>0.05)")
+
+                        # 3. Conf Interval
+                        c_stat3.info(f"**%95 Güven Aralığı:**\nAralık: [{conf_low:.4f}, {conf_high:.4f}]")
+                        
+                        st.caption("*Not: Getiri T-Testi piyasa korelasyonunu (aynı yönü), Bootstrap testi ise Risk/Getiri kalitesini (kalite farkını) ölçer.*")
                         
                         # Grafik 1: Equity Curve
                         st.divider()
@@ -629,14 +773,31 @@ elif category == "🛡️ Sağlamlık Testleri":
                             st.plotly_chart(fig_trade, use_container_width=True)
 
                         
-                        # Grafik 2: Model Kararlılığı
-                        st.subheader("🧠 Modelin Zaman İçindeki Zeka Değişimi")
+                        # Grafik 2: Modelin Başarım Tarihçesi (Accuracy, F1, vb.)
+                        st.subheader("🤖 Model Zekası (Detaylı Anlık Performans)")
                         acc_hist = pd.DataFrame(wf_res['model_accuracy_history'])
                         if not acc_hist.empty:
                             acc_hist['period'] = pd.to_datetime(acc_hist['period'])
                             acc_hist.set_index('period', inplace=True)
-                            st.bar_chart(acc_hist * 100)
-                            st.caption("Stabil veya artan çubuklar, modelin sağlıklı öğrendiğini gösterir.")
+                            
+                            # Ortalama Metrikleri Göster
+                            m1, m2, m3, m4 = st.columns(4)
+                            avg_acc = acc_hist['accuracy'].mean()
+                            avg_f1 = acc_hist.get('f1_score', pd.Series([0])).mean()
+                            avg_recall = acc_hist.get('recall', pd.Series([0])).mean()
+                            avg_auc = acc_hist.get('auc', pd.Series([0])).mean()
+                            
+                            m1.metric("Ort. Accuracy", f"%{avg_acc*100:.1f}")
+                            m2.metric("Ort. F1 Score", f"{avg_f1:.2f}")
+                            m3.metric("Ort. Recall", f"{avg_recall:.2f}")
+                            m4.metric("Ort. ROC AUC", f"{avg_auc:.2f}")
+                            
+                            st.caption("Not: ROC AUC 0.5 çıkarsa o dönemde model hep tek yöne (sadece artış/azalış) tahmin yapmış olabilir.")
+                            # Chart'ta da F1 skorunu gösterelim
+                            if 'f1_score' in acc_hist.columns:
+                                st.line_chart(acc_hist[['accuracy', 'f1_score']] * 100)
+                            else:
+                                st.line_chart(acc_hist['accuracy'] * 100)
                         else:
                             st.warning("Yeterli doğruluk verisi toplanamadı.")
 
